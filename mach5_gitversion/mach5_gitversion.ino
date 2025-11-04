@@ -1,7 +1,11 @@
-#include <Servo.h>
-#include <Adafruit_NeoPixel.h>
+//#include "ServoTimer2.h"
+#include<Servo.h>
+#define FASTLED_ALLOW_INTERRUPTS 1
 
-const int servoOnePin = 2;
+
+#include <FastLED.h>
+
+const int servoOnePin = 5;
 //const int buttonOnePin = 2;
 
 const int lightOnePin = 28;
@@ -17,8 +21,10 @@ const int controller1GasPin = 13;
 
 ////////////////////NEOPIXELS/////////////////////////////
 const int LED_COUNT = 25;
-Adafruit_NeoPixel stripOne(LED_COUNT, 29, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel stripTwo(LED_COUNT, 12, NEO_GRB + NEO_KHZ800);
+//Adafruit_NeoPixel stripOne(LED_COUNT, 29, NEO_GRB + NEO_KHZ800);
+//Adafruit_NeoPixel stripTwo(LED_COUNT, 12, NEO_GRB + NEO_KHZ800);
+CRGB stripOne[LED_COUNT];
+const int stripOnePin = 29;
 
 
 
@@ -108,6 +114,7 @@ public:
 
 
   double needleIncrement = 0;
+  double lastNeedleIncrement = 0;
   int currentCarGear;
   int lastCarGear = 1;
 
@@ -116,7 +123,7 @@ public:
 
   Controller controller;
 
-  Adafruit_NeoPixel *lightStripPointer;
+  CRGB *lightStripPointer;
 
   bool boost = false;
 
@@ -131,22 +138,23 @@ public:
 
   void resetStrip() {
     for (int i = 0; i < LED_COUNT; i++) {
-      (*lightStripPointer).setPixelColor(i, 0, 0, 0);
+      //(*lightStripPointer).setPixelColor(i, 0, 0, 0);
     }
     Serial.println("RESET STRIP");
-    (*lightStripPointer).show();
+    //(*lightStripPointer).show();
   }
 
-  void setupCar(int servoPin, Controller theController, int theLightPin, Adafruit_NeoPixel &theStrip) {
+  void setupCar(int servoPin, Controller theController, int theLightPin, CRGB *theStrip) {
 
     controller = theController;
-    lightStripPointer = &theStrip;
+    lightStripPointer = theStrip;
 
     lightPin = theLightPin;
 
     
     resetStrip();
     needle.attach(servoPin);
+    Serial.println("setup");
     needle.write(0);
   }
 
@@ -164,9 +172,8 @@ public:
   
     int ledsToShow = LED_COUNT / (finishLineDistance/totalDistance);//a ratio from 0 to 1 indicating completion.
     for (int i = 0; i < ledsToShow; i++) {
-      (*lightStripPointer).setPixelColor(i, 100, 0, 0);
+      lightStripPointer[i] = CRGB(100, 0, 0);
     }
-    (*lightStripPointer).show();
   }
   
 
@@ -195,12 +202,12 @@ public:
     //determine current needle zone.
 
 
-
+    
     if (needleIncrement < 180 && currentCarGear == lastCarGear) {
       //Nothing happening, just keep stepping
       if (gas == true && neutral == false) {
 
-        needleIncrement = needleIncrement + 0.1 * (currentCarGear / 2.0);
+        needleIncrement = needleIncrement + 0.2 * (currentCarGear / 2.0);
       } else if ((needleIncrement - 0.1 * (currentCarGear / 2.0)) > 0) {
         //rpms will fall off if were in neutral OR theres no gas.
         needleIncrement = needleIncrement - 0.1 * (currentCarGear / 2.0);
@@ -220,7 +227,13 @@ public:
         return true;
         //END THE GAME. YOU WON!!!
       }
-      needle.write(needleIncrement);  //values between 0 and 180
+      if (needleIncrement != lastNeedleIncrement) {
+        Serial.println(needleIncrement);
+        needle.write(needleIncrement);  //values between 0 and 180
+      }
+      
+
+      
       digitalWrite(lightPin, LOW);
     } else if (needleIncrement >= 180) {
       burnout = true;
@@ -241,6 +254,8 @@ public:
             boost = true;
           }
           needleIncrement = 0;
+         
+        
           needle.write(needleIncrement);
           Serial.println("Shift to Gear" + String(currentCarGear));
           delay(350);  //time for needle to reset.
@@ -272,7 +287,7 @@ public:
     }
 
 
-
+    lastNeedleIncrement = needleIncrement;
     lastCarGear = currentCarGear;
     return false;  //car not at finish line.
   }
@@ -328,7 +343,8 @@ void setup() {
   pinMode(controller1Gear4Pin, INPUT_PULLUP);
   pinMode(controller1GasPin, INPUT_PULLUP);
 
-
+  FastLED.addLeds<WS2812, stripOnePin>(stripOne, LED_COUNT);
+  
   controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, 0, 0, controller1GasPin);
   
   carOne.setupCar(servoOnePin, controllerOne, lightOnePin, stripOne);
@@ -344,7 +360,8 @@ void loop() {
       Serial.println("GAME FINISHED!!!!");
       currentGame.startNewGame();
     }
+    FastLED.show();
   }
 
-  delay(3);
+  //delay(3);
 }
