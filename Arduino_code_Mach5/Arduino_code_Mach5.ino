@@ -84,23 +84,26 @@ public:
 
     return currentGear;
   }
+
+
+  
   void waitForPlayerToResetToGearOne(int lightPin) {
-    bool lightStatus = 0;
+    static unsigned long lastToggle = 0;
+    static bool ledState = false;
+  
     Serial.println("GET IN GEAR 1. NOW.");
-    int i = 0;
-    while (getCurrentGear() != 1) {
-      i++;
-      if (i % 4 == 0) {
-        lightStatus = !lightStatus;
-        //Serial.print(lightStatus);
-      }
+    if (getCurrentGear() == 1) {
+      waitingToGetInGearOne = false;
+    } 
+    else {
 
-      digitalWrite(lightPin, lightStatus);
-
-      
     }
-
-    digitalWrite(lightPin, LOW);
+    unsigned long now = millis();
+    if (now - lastToggle >= 500) {
+        lastToggle = now;
+        ledState = !ledState;
+        digitalWrite(lightPin, ledState);
+    }
     return;
   }
   bool getGasPedal() {
@@ -189,6 +192,12 @@ public:
 
 
   bool loopCar(float dt) {
+
+    if (controller.waitingToGetInGearOne == true) {
+      //hand off the loop to the waiter function
+      controller.waitForPlayerToResetToGearOne(lightPin);
+      return false;
+    }
     
     bool neutral = false;
 
@@ -208,7 +217,7 @@ public:
         
         //Okay, lets reset the player.
         //WE GOTTA FORCE PLAYER TO GO BACK TO GEAR 1 SOMEHOW
-        controller.waitForPlayerToResetToGearOne(lightPin);
+        controller.waitingToGetInGearOne = true;
         digitalWrite(lightPin, LOW);
       
       } 
@@ -387,6 +396,7 @@ void loop() {
             if (carOneFinished) {
                 Serial.println("GAME FINISHED!");
                 carOne.resetStrip(true);
+                delay(50000);
                 currentGame.startNewGame();
             }
         }
