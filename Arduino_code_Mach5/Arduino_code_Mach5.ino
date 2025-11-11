@@ -20,11 +20,14 @@ const int controller1GasPin = 13;
 
 
 ////////////////////NEOPIXELS/////////////////////////////
-const int LED_COUNT = 25;
-//Adafruit_NeoPixel stripOne(LED_COUNT, 29, NEO_GRB + NEO_KHZ800);
-//Adafruit_NeoPixel stripTwo(LED_COUNT, 12, NEO_GRB + NEO_KHZ800);
+const int LED_COUNT = 30;
+
 CRGB stripOne[LED_COUNT];
 const int stripOnePin = 29;
+
+
+
+
 
 
 
@@ -39,7 +42,7 @@ public:
   //we should track it in Controller, not car.
   int currentGear = 1;
 
-
+  bool waitingToGetInGearOne = false;
 
   int gearPins[4];
 
@@ -94,7 +97,7 @@ public:
 
       digitalWrite(lightPin, lightStatus);
 
-      delay(50);
+      
     }
 
     digitalWrite(lightPin, LOW);
@@ -118,6 +121,9 @@ public:
   int currentCarGear;
   int lastCarGear = 1;
 
+  bool burnout = false;
+  int burnoutTimer = 0;
+
   const int SAFE_SHIFT_THRESHOLD = 90;
   const int SPEED_BOOST_THRESHOLD = 165;
 
@@ -136,12 +142,14 @@ public:
 
  
 
-  void resetStrip() {
-    for (int i = 0; i < LED_COUNT; i++) {
-      //(*lightStripPointer).setPixelColor(i, 0, 0, 0);
+  void resetStrip(bool win) {
+    int num = 0;
+    if (win) {
+      num = 100;
     }
-    Serial.println("RESET STRIP");
-    //(*lightStripPointer).show();
+    for (int i = 0; i < LED_COUNT; i++) {
+      lightStripPointer[i] = CRGB(0, 0, num);
+    }
   }
 
   void setupCar(int servoPin, Controller theController, int theLightPin, CRGB *theStrip) {
@@ -152,7 +160,7 @@ public:
     lightPin = theLightPin;
 
     
-    resetStrip();
+    resetStrip(false);
     needle.attach(servoPin);
     Serial.println("setup");
     needle.write(0);
@@ -165,30 +173,50 @@ public:
     lastCarGear = 0;
     currentCarGear = 0;
     boost = false;
-    resetStrip();
+    resetStrip(false);
   }
 
   void setLightDistance() {
   
     int ledsToShow = LED_COUNT / (finishLineDistance/totalDistance);//a ratio from 0 to 1 indicating completion.
     for (int i = 0; i < ledsToShow; i++) {
-      lightStripPointer[i] = CRGB(100, 0, 0);
+      lightStripPointer[i] = CRGB(0, 100, 0);
     }
   }
+
   
 
 
 
-  bool loopCar() {
-
-    bool burnout = false;
-
+  bool loopCar(float dt) {
+    
     bool neutral = false;
 
 
     currentCarGear = controller.getCurrentGear();
 
     bool gas = controller.getGasPedal();
+
+
+    if (burnout == true) {
+      //count car out of burnout.
+      burnoutTimer++;
+      if (burnoutTimer >= 350) {
+        //out of burnout mode!!!
+        burnoutTimer = 0;
+        burnout = false;
+        
+        //Okay, lets reset the player.
+        //WE GOTTA FORCE PLAYER TO GO BACK TO GEAR 1 SOMEHOW
+        controller.waitForPlayerToResetToGearOne(lightPin);
+        digitalWrite(lightPin, LOW);
+      
+      } 
+      else {
+        return false;
+      }
+
+    }
 
     if (currentCarGear == 0) {
       neutral = true;
@@ -207,10 +235,10 @@ public:
       //Nothing happening, just keep stepping
       if (gas == true && neutral == false) {
 
-        needleIncrement = needleIncrement + 0.2 * (currentCarGear / 2.0);
+        needleIncrement += (0.2 * (currentCarGear / 2.0)) * dt * 100.0;
       } else if ((needleIncrement - 0.1 * (currentCarGear / 2.0)) > 0) {
         //rpms will fall off if were in neutral OR theres no gas.
-        needleIncrement = needleIncrement - 0.1 * (currentCarGear / 2.0);
+        needleIncrement -= (0.1 * (currentCarGear / 2.0)) * dt * 100.0;
       } else {
         needleIncrement = needleIncrement;  //keep it the same.
       }
@@ -258,7 +286,7 @@ public:
         
           needle.write(needleIncrement);
           Serial.println("Shift to Gear" + String(currentCarGear));
-          delay(350);  //time for needle to reset.
+          //delay(350);  //time for needle to reset. //I dont want delays.
         }
 
 
@@ -277,13 +305,7 @@ public:
       needle.write(needleIncrement);
       Serial.println("YOU BURNT OUTt");
       digitalWrite(lightPin, HIGH);
-      delay(5000);
-
-      //Okay, lets reset the player.
-      //WE GOTTA FORCE PLAYER TO GO BACK TO GEAR 1 SOMEHOW
-      controller.waitForPlayerToResetToGearOne(lightPin);
-      digitalWrite(lightPin, LOW);
-      burnout = false;
+      return false;
     }
 
 
@@ -295,8 +317,6 @@ public:
 
 Car carOne = Car();
 Controller controllerOne = Controller();
-
-
 
 
 
@@ -353,15 +373,24 @@ void setup() {
 }
 
 
-void loop() {
-  if (currentGame.gameIsInProgress == true) {
-    bool carOneFinished = carOne.loopCar();
-    if (carOneFinished) {
-      Serial.println("GAME FINISHED!!!!");
-      currentGame.startNewGame();
-    }
-    FastLED.show();
-  }
+unsigned long lastUpdate = 0;
+const unsigned long frameInterval = 10;  // 10 ms = 100 FPS update
 
-  //delay(3);
+void loop() {
+    unsigned long now = millis();
+
+    if (now - lastUpdate >= frameInterval) {
+        lastUpdate = now;
+
+        if (currentGame.gameIsInProgress) {
+            bool carOneFinished = carOne.loopCar(frameInterval / 1000.0);
+            if (carOneFinished) {
+                Serial.println("GAME FINISHED!");
+                carOne.resetStrip(true);
+                currentGame.startNewGame();
+            }
+        }
+    }
+
+    FastLED.show();
 }
