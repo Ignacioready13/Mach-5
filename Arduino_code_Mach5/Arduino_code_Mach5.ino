@@ -38,6 +38,7 @@ public:
 
 
   int gasPin;
+  int lightPin;
   //because our physical joystick is gonna rely on being IN a current gear, not a button,
   //we should track it in Controller, not car.
   int currentGear = 1;
@@ -47,7 +48,7 @@ public:
   int gearPins[4];
 
 
-  void setupController(int g1Pin, int g2Pin, int g3Pin, int g4Pin, int g5Pin, int g6Pin, int theGasPin) {
+  void setupController(int g1Pin, int g2Pin, int g3Pin, int g4Pin, int g5Pin, int g6Pin, int theGasPin, int theLightPin) {
 
     Serial.println("SET UP CONTROLLER");
 
@@ -56,6 +57,7 @@ public:
     gearPins[2] = g3Pin;
     gearPins[3] = g4Pin;
     gasPin = theGasPin;
+    lightPin = theLightPin;
 
 
     //gasPin = theGasPin;
@@ -87,7 +89,8 @@ public:
 
 
   
-  void waitForPlayerToResetToGearOne(int lightPin) {
+  void waitForPlayerToResetToGearOne() {
+    //Designed to be passed to EVERY FRAME
     static unsigned long lastToggle = 0;
     static bool ledState = false;
   
@@ -176,6 +179,8 @@ public:
     lastCarGear = 0;
     currentCarGear = 0;
     boost = false;
+    burnout = false;
+    burnoutTimer = 0;
     resetStrip(false);
   }
 
@@ -195,7 +200,7 @@ public:
 
     if (controller.waitingToGetInGearOne == true) {
       //hand off the loop to the waiter function
-      controller.waitForPlayerToResetToGearOne(lightPin);
+      controller.waitForPlayerToResetToGearOne();
       return false;
     }
     
@@ -331,24 +336,52 @@ Controller controllerOne = Controller();
 
 class Game {
 public:
-  bool gameIsInProgress = true;
+  bool gameIsInProgress = false;
+  bool oneTimeResets = false;
+
   void startNewGame() {
-    gameIsInProgress = false;
+    //CALLED ONCE each time a new game starts!
+    //gameIsInProgress = false;
     //reset old game
     carOne.resetCar();
+    controllerOne.waitingToGetInGearOne = true;
 
     waitForPlayers();
 
   }
 
-  void waitForPlayers() {
+  bool waitForPlayers() {
+    bool someoneIsHoldingUsUp = false;
     Serial.println("WAITING FOR PLAYERS.....");
-    delay(90000);
-    //start new game
-    controllerOne.waitForPlayerToResetToGearOne(lightOnePin);
+    
+    if (controllerOne.waitingToGetInGearOne == true) {
+      //hand off the loop to the waiter function
+      controllerOne.waitForPlayerToResetToGearOne();
+      someoneIsHoldingUsUp = true;
+    }
     //do the same for player two.
+    if (!someoneIsHoldingUsUp) {
+      //everyone is ready!
+      return true;
+    } 
+    else {
+      return false;
+    }
+    
+  }
 
-    gameIsInProgress = true;
+  void tryingToStartNewGame() {
+    //CALLED EVERY FRAME THAT THE GAME IS NOT IN PROGRESS.
+    if (oneTimeResets) {
+      oneTimeResets = false;
+      startNewGame();
+    }
+    bool ready = waitForPlayers();
+    if (ready) {
+      gameIsInProgress = true;
+    }
+    return;
+
   }
 
   bool getGameStatus() {
@@ -361,7 +394,7 @@ Game currentGame = Game();
 
 
 void setup() {
-  delay(1000);
+  delay(100);
   Serial.begin(9600);
   Serial.println("begin");
   //pinMode(buttonOnePin, INPUT);
@@ -374,11 +407,13 @@ void setup() {
 
   FastLED.addLeds<WS2812, stripOnePin>(stripOne, LED_COUNT);
   
-  controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, 0, 0, controller1GasPin);
+  controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, 0, 0, controller1GasPin, lightOnePin);
   
   carOne.setupCar(servoOnePin, controllerOne, lightOnePin, stripOne);
+  controllerOne.waitingToGetInGearOne = true;
 
-  controllerOne.waitForPlayerToResetToGearOne(carOne.lightPin);
+  //controllerOne.waitForPlayerToResetToGearOne(carOne.lightPin);
+  //currentGame.startNewGame();
 }
 
 
@@ -391,14 +426,24 @@ void loop() {
     if (now - lastUpdate >= frameInterval) {
         lastUpdate = now;
 
-        if (currentGame.gameIsInProgress) {
+        if (currentGame.gameIsInProgress) { //will turn back on when game is ready.
             bool carOneFinished = carOne.loopCar(frameInterval / 1000.0);
-            if (carOneFinished) {
-                Serial.println("GAME FINISHED!");
+            bool endGame = false;
+            if (carOneFinished) {             
                 carOne.resetStrip(true);
-                delay(50000);
-                currentGame.startNewGame();
+                FastLED.show();
+                endGame = true;                
             }
+
+            if (endGame) {
+              Serial.println("GAME FINISHED!");
+              delay(3000);
+              currentGame.gameIsInProgress = false;
+              currentGame.oneTimeResets = true;
+            }
+        } 
+        else {
+          currentGame.tryingToStartNewGame();
         }
     }
 
