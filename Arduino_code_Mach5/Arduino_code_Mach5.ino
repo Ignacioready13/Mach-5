@@ -16,11 +16,13 @@ const int controller1Gear1Pin = 22;
 const int controller1Gear2Pin = 23;
 const int controller1Gear3Pin = 24;
 const int controller1Gear4Pin = 25;
+const int controller1Gear5Pin = 26;
+const int controller1Gear6Pin = 27;
 const int controller1GasPin = 13;
 
 
 ////////////////////NEOPIXELS/////////////////////////////
-const int LED_COUNT = 30;
+const int LED_COUNT = 26;
 
 CRGB stripOne[LED_COUNT];
 const int stripOnePin = 29;
@@ -45,7 +47,7 @@ public:
 
   bool waitingToGetInGearOne = false;
 
-  int gearPins[4];
+  int gearPins[6];
 
 
   void setupController(int g1Pin, int g2Pin, int g3Pin, int g4Pin, int g5Pin, int g6Pin, int theGasPin, int theLightPin) {
@@ -56,6 +58,8 @@ public:
     gearPins[1] = g2Pin;
     gearPins[2] = g3Pin;
     gearPins[3] = g4Pin;
+    gearPins[4] = g5Pin;
+    gearPins[5] = g6Pin;
     gasPin = theGasPin;
     lightPin = theLightPin;
 
@@ -68,7 +72,7 @@ public:
 
     int gearShifterPosition = 0;
     //i corresponds to array value.
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
       bool status = digitalRead(gearPins[i]);
 
 
@@ -176,8 +180,9 @@ public:
     totalDistance = 0;
     velocity = 0;
     needleIncrement = 0;
-    lastCarGear = 0;
-    currentCarGear = 0;
+    lastNeedleIncrement = 0;
+    lastCarGear = 1;
+    
     boost = false;
     burnout = false;
     burnoutTimer = 0;
@@ -403,11 +408,13 @@ void setup() {
   pinMode(controller1Gear2Pin, INPUT_PULLUP);
   pinMode(controller1Gear3Pin, INPUT_PULLUP);
   pinMode(controller1Gear4Pin, INPUT_PULLUP);
+  pinMode(controller1Gear5Pin, INPUT_PULLUP);
+  pinMode(controller1Gear6Pin, INPUT_PULLUP);
   pinMode(controller1GasPin, INPUT_PULLUP);
 
   FastLED.addLeds<WS2812, stripOnePin>(stripOne, LED_COUNT);
   
-  controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, 0, 0, controller1GasPin, lightOnePin);
+  controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, controller1Gear5Pin, controller1Gear6Pin, controller1GasPin, lightOnePin);
   
   carOne.setupCar(servoOnePin, controllerOne, lightOnePin, stripOne);
   controllerOne.waitingToGetInGearOne = true;
