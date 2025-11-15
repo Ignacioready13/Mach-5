@@ -120,8 +120,9 @@ public:
     //Designed to be passed to EVERY FRAME
     
   
-    Serial.println("GET IN GEAR 1. NOW.");
+    //Serial.println("GET IN GEAR 1. NOW.");
     if (getCurrentGear() == 1) {
+      Serial.println("This player is now in gear.");
       waitingToGetInGearOne = false;
     } 
     else {
@@ -146,7 +147,6 @@ class Car {
 public:
 
   Servo needle;
-  bool isServoTwo;
   CRGB teamColor = CRGB::Green;
 
   double needleIncrement = 0;
@@ -181,17 +181,17 @@ public:
       num = 255;
     }
     for (int i = 0; i < LED_COUNT; i++) {
-      lightStripPointer[i] = CRGB(0, win, 0);
+      lightStripPointer[i] = CRGB(0, num, 0);
     }
   }
 
-  void setupCar(int servoPin, Controller* theController, int theLightPin, CRGB *theStrip, bool isTheTwo) {
+  void setupCar(int servoPin, Controller* theController, int theLightPin, CRGB *theStrip) {
 
     controller = theController;
     lightStripPointer = theStrip;
 
     lightPin = theLightPin;
-    isServoTwo = isTheTwo;
+
     
     resetStrip(false);
     needle.attach(servoPin);
@@ -213,7 +213,7 @@ public:
   }
 
   void setLightDistance() {
-  
+    
     int ledsToShow = LED_COUNT / (finishLineDistance/totalDistance);//a ratio from 0 to 1 indicating completion.
     for (int i = 0; i < ledsToShow; i++) {
       lightStripPointer[i] = teamColor;
@@ -243,10 +243,14 @@ public:
     if (burnout == true) {
       //count car out of burnout.
       burnoutTimer++;
-      if (burnoutTimer >= 350) {
+      if (burnoutTimer >= 150) {
         //out of burnout mode!!!
         burnoutTimer = 0;
         burnout = false;
+        lastCarGear = 1;
+        lastNeedleIncrement = 0;
+        needleIncrement = 0;
+        velocity = 0;
         
         //Okay, lets reset the player.
         //WE GOTTA FORCE PLAYER TO GO BACK TO GEAR 1 SOMEHOW
@@ -276,8 +280,8 @@ public:
     if (needleIncrement < 180 && currentCarGear == lastCarGear) {
       //Nothing happening, just keep stepping
       if (gas == true && neutral == false) {
-
-        needleIncrement += (1 * (1.0/currentCarGear)) * dt * 100.0;
+        float gearFactor = pow(currentCarGear, 0.7); // 0.7 makes higher gears less punishing
+        needleIncrement += (1 * (1.0/gearFactor)) * dt * 100.0;
       } else if ((needleIncrement - 0.1 * (currentCarGear / 2.0)) > 0) {
         //rpms will fall off if were in neutral OR theres no gas.
         needleIncrement -= (0.8 * (1.0/currentCarGear)) * dt * 100.0;
@@ -285,7 +289,7 @@ public:
         needleIncrement = needleIncrement;  //keep it the same.
       }
 
-      velocity = (needleIncrement / 50.0) * currentCarGear;
+      velocity = (needleIncrement / 50.0) * currentCarGear; //location of needle * car gear
 
       totalDistance = totalDistance + velocity;
       if (boost == true) {
@@ -297,6 +301,8 @@ public:
         return true;
         //END THE GAME. YOU WON!!!
       }
+
+      //
       if (needleIncrement != lastNeedleIncrement) {
         Serial.println(needleIncrement);
         needle.write(needleIncrement);  //values between 0 and 180
@@ -317,13 +323,13 @@ public:
           burnout = true;
 
         } else {
-          //Safely shifted.
-          if (needleIncrement > SPEED_BOOST_THRESHOLD) {
-            Serial.println("SPEED BOOST");
-            digitalWrite(lightPin, HIGH);
-            boost = true;
-          }
-          needleIncrement = 0;
+          //Safely shifted!!!!
+          //if (needleIncrement > SPEED_BOOST_THRESHOLD) {
+            //Serial.println("SPEED BOOST");
+            //digitalWrite(lightPin, HIGH);
+            //boost = true;
+          //}
+          needleIncrement = currentCarGear * 10; //Dont want to reset ALL the way.
          
         
           needle.write(needleIncrement);
@@ -376,6 +382,7 @@ public:
     //gameIsInProgress = false;
     //reset old game
     carOne.resetCar();
+    carTwo.resetCar();
     controllerOne.waitingToGetInGearOne = true;
     controllerTwo.waitingToGetInGearOne = true;
 
@@ -385,7 +392,7 @@ public:
 
   bool waitForPlayers() {
     bool someoneIsHoldingUsUp = false;
-    Serial.println("WAITING FOR PLAYERS.....");
+    //Serial.println("WAITING FOR PLAYERS.....");
     
     if (controllerOne.waitingToGetInGearOne == true) {
       //hand off the loop to the waiter function
@@ -400,6 +407,7 @@ public:
     //do the same for player two.
     if (!someoneIsHoldingUsUp) {
       //everyone is ready!
+      Serial.println("EVeryone is ready for game to start.");
       return true;
     } 
     else {
@@ -432,7 +440,7 @@ Game currentGame = Game();
 
 
 void setup() {
-  delay(100);
+  //delay(100);
   Serial.begin(9600);
   Serial.println("begin");
   //pinMode(buttonOnePin, INPUT);
@@ -461,9 +469,9 @@ void setup() {
   controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, controller1Gear5Pin, controller1Gear6Pin, controller1GasPin, lightOnePin);
   controllerTwo.setupController(controller2Gear1Pin, controller2Gear2Pin, controller2Gear3Pin, controller2Gear4Pin, controller2Gear5Pin, controller2Gear6Pin, controller2GasPin, lightTwoPin);
   
-  carOne.setupCar(servoOnePin, &controllerOne, lightOnePin, stripOne, false);
+  carOne.setupCar(servoOnePin, &controllerOne, lightOnePin, stripOne);
   carOne.teamColor = CRGB::Blue;
-  carTwo.setupCar(servoTwoPin, &controllerTwo, lightTwoPin, stripTwo, true);
+  carTwo.setupCar(servoTwoPin, &controllerTwo, lightTwoPin, stripTwo);
   carTwo.teamColor = CRGB::Red;
 
 
@@ -490,11 +498,13 @@ void loop() {
             bool endGame = false;
             if (carOneFinished) {             
                 carOne.resetStrip(true);
+                carTwo.resetStrip(false);
                 FastLED.show();
                 endGame = true;                
             }
             if (carTwoFinished) {             
                 carTwo.resetStrip(true);
+                carOne.resetStrip(false); //loser
                 FastLED.show();
                 endGame = true;                
             }
