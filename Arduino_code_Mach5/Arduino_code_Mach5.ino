@@ -5,27 +5,49 @@
 
 #include <FastLED.h>
 
-const int servoOnePin = 5;
+const int servoOnePin = 4;
+const int servoTwoPin = 11;
 //const int buttonOnePin = 2;
+const int LED_COUNT = 22;
 
-const int lightOnePin = 28;
+
 const int finishLineDistance = 12000;
 
 /////////////////CONTROLLER PINS////////////////////////////
-const int controller1Gear1Pin = 22;
-const int controller1Gear2Pin = 23;
-const int controller1Gear3Pin = 24;
-const int controller1Gear4Pin = 25;
-const int controller1Gear5Pin = 26;
-const int controller1Gear6Pin = 27;
-const int controller1GasPin = 13;
+const int controller1Gear1Pin = 40;
+const int controller1Gear2Pin = 41;
+const int controller1Gear3Pin = 42;
+const int controller1Gear4Pin = 43;
+const int controller1Gear5Pin = 44;
+const int controller1Gear6Pin = 45;
+const int controller1GasPin = 46;
 
-
-////////////////////NEOPIXELS/////////////////////////////
-const int LED_COUNT = 26;
+const int lightOnePin = 47;
 
 CRGB stripOne[LED_COUNT];
-const int stripOnePin = 29;
+const int stripOnePin = 48;
+
+
+const int controller2Gear1Pin = 22;
+const int controller2Gear2Pin = 23;
+const int controller2Gear3Pin = 24;
+const int controller2Gear4Pin = 25;
+const int controller2Gear5Pin = 26;
+const int controller2Gear6Pin = 27;
+const int controller2GasPin = 28;
+
+const int lightTwoPin = 29;
+
+CRGB stripTwo[LED_COUNT];
+const int stripTwoPin = 30;
+
+////////////////////NEOPIXELS/////////////////////////////
+
+
+////STRIPS
+
+
+
 
 
 
@@ -38,7 +60,8 @@ const int stripOnePin = 29;
 class Controller {
 public:
 
-
+  unsigned long lastToggle = 0;
+  bool ledState = false;
   int gasPin;
   int lightPin;
   //because our physical joystick is gonna rely on being IN a current gear, not a button,
@@ -95,8 +118,7 @@ public:
   
   void waitForPlayerToResetToGearOne() {
     //Designed to be passed to EVERY FRAME
-    static unsigned long lastToggle = 0;
-    static bool ledState = false;
+    
   
     Serial.println("GET IN GEAR 1. NOW.");
     if (getCurrentGear() == 1) {
@@ -124,7 +146,8 @@ class Car {
 public:
 
   Servo needle;
-
+  bool isServoTwo;
+  CRGB teamColor = CRGB::Green;
 
   double needleIncrement = 0;
   double lastNeedleIncrement = 0;
@@ -137,7 +160,7 @@ public:
   const int SAFE_SHIFT_THRESHOLD = 90;
   const int SPEED_BOOST_THRESHOLD = 165;
 
-  Controller controller;
+  Controller *controller;
 
   CRGB *lightStripPointer;
 
@@ -155,20 +178,20 @@ public:
   void resetStrip(bool win) {
     int num = 0;
     if (win) {
-      num = 100;
+      num = 255;
     }
     for (int i = 0; i < LED_COUNT; i++) {
-      lightStripPointer[i] = CRGB(0, 0, num);
+      lightStripPointer[i] = CRGB(0, win, 0);
     }
   }
 
-  void setupCar(int servoPin, Controller theController, int theLightPin, CRGB *theStrip) {
+  void setupCar(int servoPin, Controller* theController, int theLightPin, CRGB *theStrip, bool isTheTwo) {
 
     controller = theController;
     lightStripPointer = theStrip;
 
     lightPin = theLightPin;
-
+    isServoTwo = isTheTwo;
     
     resetStrip(false);
     needle.attach(servoPin);
@@ -193,7 +216,7 @@ public:
   
     int ledsToShow = LED_COUNT / (finishLineDistance/totalDistance);//a ratio from 0 to 1 indicating completion.
     for (int i = 0; i < ledsToShow; i++) {
-      lightStripPointer[i] = CRGB(0, 100, 0);
+      lightStripPointer[i] = teamColor;
     }
   }
 
@@ -203,18 +226,18 @@ public:
 
   bool loopCar(float dt) {
 
-    if (controller.waitingToGetInGearOne == true) {
+    if (controller->waitingToGetInGearOne == true) {
       //hand off the loop to the waiter function
-      controller.waitForPlayerToResetToGearOne();
+      controller->waitForPlayerToResetToGearOne();
       return false;
     }
     
     bool neutral = false;
 
 
-    currentCarGear = controller.getCurrentGear();
+    currentCarGear = controller->getCurrentGear();
 
-    bool gas = controller.getGasPedal();
+    bool gas = controller->getGasPedal();
 
 
     if (burnout == true) {
@@ -227,7 +250,7 @@ public:
         
         //Okay, lets reset the player.
         //WE GOTTA FORCE PLAYER TO GO BACK TO GEAR 1 SOMEHOW
-        controller.waitingToGetInGearOne = true;
+        controller->waitingToGetInGearOne = true;
         digitalWrite(lightPin, LOW);
       
       } 
@@ -254,10 +277,10 @@ public:
       //Nothing happening, just keep stepping
       if (gas == true && neutral == false) {
 
-        needleIncrement += (0.2 * (currentCarGear / 2.0)) * dt * 100.0;
+        needleIncrement += (1 * (1.0/currentCarGear)) * dt * 100.0;
       } else if ((needleIncrement - 0.1 * (currentCarGear / 2.0)) > 0) {
         //rpms will fall off if were in neutral OR theres no gas.
-        needleIncrement -= (0.1 * (currentCarGear / 2.0)) * dt * 100.0;
+        needleIncrement -= (0.8 * (1.0/currentCarGear)) * dt * 100.0;
       } else {
         needleIncrement = needleIncrement;  //keep it the same.
       }
@@ -337,6 +360,10 @@ public:
 Car carOne = Car();
 Controller controllerOne = Controller();
 
+Car carTwo = Car();
+Controller controllerTwo = Controller();
+
+
 
 
 class Game {
@@ -350,6 +377,7 @@ public:
     //reset old game
     carOne.resetCar();
     controllerOne.waitingToGetInGearOne = true;
+    controllerTwo.waitingToGetInGearOne = true;
 
     waitForPlayers();
 
@@ -362,6 +390,11 @@ public:
     if (controllerOne.waitingToGetInGearOne == true) {
       //hand off the loop to the waiter function
       controllerOne.waitForPlayerToResetToGearOne();
+      someoneIsHoldingUsUp = true;
+    }
+    if (controllerTwo.waitingToGetInGearOne == true) {
+      //hand off the loop to the waiter function
+      controllerTwo.waitForPlayerToResetToGearOne();
       someoneIsHoldingUsUp = true;
     }
     //do the same for player two.
@@ -412,12 +445,30 @@ void setup() {
   pinMode(controller1Gear6Pin, INPUT_PULLUP);
   pinMode(controller1GasPin, INPUT_PULLUP);
 
-  FastLED.addLeds<WS2812, stripOnePin>(stripOne, LED_COUNT);
+  /////c2
+  pinMode(lightTwoPin, OUTPUT);
+  pinMode(controller2Gear1Pin, INPUT_PULLUP);
+  pinMode(controller2Gear2Pin, INPUT_PULLUP);
+  pinMode(controller2Gear3Pin, INPUT_PULLUP);
+  pinMode(controller2Gear4Pin, INPUT_PULLUP);
+  pinMode(controller2Gear5Pin, INPUT_PULLUP);
+  pinMode(controller2Gear6Pin, INPUT_PULLUP);
+  pinMode(controller2GasPin, INPUT_PULLUP);
+
+  FastLED.addLeds<WS2812, stripOnePin, GRB>(stripOne, LED_COUNT);
+  FastLED.addLeds<WS2812, stripTwoPin, GRB>(stripTwo, LED_COUNT);
   
   controllerOne.setupController(controller1Gear1Pin, controller1Gear2Pin, controller1Gear3Pin, controller1Gear4Pin, controller1Gear5Pin, controller1Gear6Pin, controller1GasPin, lightOnePin);
+  controllerTwo.setupController(controller2Gear1Pin, controller2Gear2Pin, controller2Gear3Pin, controller2Gear4Pin, controller2Gear5Pin, controller2Gear6Pin, controller2GasPin, lightTwoPin);
   
-  carOne.setupCar(servoOnePin, controllerOne, lightOnePin, stripOne);
+  carOne.setupCar(servoOnePin, &controllerOne, lightOnePin, stripOne, false);
+  carOne.teamColor = CRGB::Blue;
+  carTwo.setupCar(servoTwoPin, &controllerTwo, lightTwoPin, stripTwo, true);
+  carTwo.teamColor = CRGB::Red;
+
+
   controllerOne.waitingToGetInGearOne = true;
+  controllerTwo.waitingToGetInGearOne = true;
 
   //controllerOne.waitForPlayerToResetToGearOne(carOne.lightPin);
   //currentGame.startNewGame();
@@ -435,9 +486,15 @@ void loop() {
 
         if (currentGame.gameIsInProgress) { //will turn back on when game is ready.
             bool carOneFinished = carOne.loopCar(frameInterval / 1000.0);
+            bool carTwoFinished = carTwo.loopCar(frameInterval / 1000.0);
             bool endGame = false;
             if (carOneFinished) {             
                 carOne.resetStrip(true);
+                FastLED.show();
+                endGame = true;                
+            }
+            if (carTwoFinished) {             
+                carTwo.resetStrip(true);
                 FastLED.show();
                 endGame = true;                
             }
