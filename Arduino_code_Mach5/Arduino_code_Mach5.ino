@@ -5,8 +5,8 @@
 
 #include <FastLED.h>
 
-const int servoOnePin = 4;
-const int servoTwoPin = 11;
+const int servoOnePin = 5;
+const int servoTwoPin = 6;
 //const int buttonOnePin = 2;
 const int LED_COUNT = 22;
 
@@ -205,11 +205,13 @@ public:
     needleIncrement = 0;
     lastNeedleIncrement = 0;
     lastCarGear = 1;
+    //needle.write(0);
     
     boost = false;
     burnout = false;
     burnoutTimer = 0;
     resetStrip(false);
+    
   }
 
   void setLightDistance() {
@@ -317,7 +319,11 @@ public:
 
     if (currentCarGear != lastCarGear && burnout == false) {
       //Something has changed........
-      if (needleIncrement > SAFE_SHIFT_THRESHOLD) {
+      if ((currentCarGear != lastCarGear + 1) && (currentCarGear != lastCarGear - 1)) {
+        //you cant jump gears!!!
+        burnout = true;
+      }
+      else if (needleIncrement > SAFE_SHIFT_THRESHOLD) {
         if (gas == true) {
           //thats bad. BURNOUT.
           burnout = true;
@@ -488,7 +494,7 @@ const unsigned long frameInterval = 10;  // 10 ms = 100 FPS update
 
 void loop() {
     unsigned long now = millis();
-
+    runV8Pulse(now, carOne.velocity);
     if (now - lastUpdate >= frameInterval) {
         lastUpdate = now;
 
@@ -523,3 +529,45 @@ void loop() {
 
     FastLED.show();
 }
+
+
+const int SPEAKER_PIN = 9;
+unsigned long lastV8Step = 0;
+int v8State = 0;        // 0 = off, 1 = on
+int baseFreq = 100;      // minimum frequency
+int maxFreq = 2000;       // maximum frequency
+unsigned long v8Interval = 10; // base interval (ms per pulse)
+const int numHarmonics = 20; // how many overtones
+float harmonicMultipliers[numHarmonics] = {1.0, 1.5, 2.0}; // simple harmonics
+
+
+
+void runV8Pulse(unsigned long now, int velocity) {
+    // Map velocity to a base frequency
+    int freq = baseFreq + velocity;
+    if (freq > maxFreq) freq = maxFreq;
+
+    // Optionally speed up pulses at higher velocity
+    unsigned long interval = v8Interval;
+    if (velocity > 0) {
+        interval = max(2UL, 50UL - velocity / 1.5);
+    }
+
+    // Non-blocking pulse
+    if (now - lastV8Step >= interval) {
+        lastV8Step = now;
+
+        if (v8State == 0) {
+            // Turn on: play multiple harmonics
+            for (int i = 0; i < numHarmonics; i++) {
+                tone(SPEAKER_PIN, freq * harmonicMultipliers[i]);
+                //delay(1); // tiny spacing between harmonics (still very short)
+            }
+            v8State = 1;
+        } else {
+            noTone(SPEAKER_PIN);
+            v8State = 0;
+        }
+    }
+}
+
